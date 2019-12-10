@@ -1,6 +1,7 @@
 import faust
 from elasticsearch import Elasticsearch
 import json
+import io
 
 es = Elasticsearch()
 
@@ -17,7 +18,7 @@ async def publishToElastic(stream):
         print("error occurred while creating index")
     
     async for msg in stream:
-        await elasticSearchSink.send(value=json.loads())
+        await elasticSearchSink.send(value=json.loads(io.BytesIO(msg).read().decode('utf-8')))
 
 @app.agent()
 async def elasticSearchSink(messages):
