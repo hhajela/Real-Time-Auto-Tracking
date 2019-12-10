@@ -3,34 +3,39 @@ import pymongo
 from geopy.distance import geodesic
 from datetime import datetime
 import pytz
-app = faust.App('consumer',broker='kafka://localhost:9092',value_serializer='raw')
+import json
+app = faust.App('consumer',broker='kafka://10.168.0.2:9092',value_serializer='raw', consumer_auto_offset_reset="latest")
+from bson import ObjectId
 
+topic_log = app.topic("alog")
 
 tz = pytz.timezone('Asia/Shanghai')
 mongo_topic = app.topic('mongo')
-
+elastic_topic =app.topic('elastic')
 def convert_document(data):
     document = {}
     document['taxi_id']=int(data[0])
     document['timestamp'] = data[1]
-    document['geo_point']={'latitude':float(data[3]),'longitude':float(data[2])}
+    document['geo_point']={'lat':float(data[3]),'lon':float(data[2])}
     document["mph"]=data[4]
     document["distance"]=data[5]
     document["halt_time"]=data[6]
     return document
 
 def find_stat(taxi):
+    log_topic.send("Will find the stats now")
     last_entry = mycol.find_one({"taxi_id": int(taxi[0])})
+    
     #If this the first entry of the taxi
     if last_entry is None:
         return [0,0,0]
-    last_cursor = mycol.find({"taxi_id": int(taxi[0])},{"_id":1,"timestamp":1,"geo_point.latitude":1,\
-            "geo_point.longitude":1,"distance":1,"halt_time":1}).limit(1).sort([("_id",-1)])
+    log_topic.send("Taxi%s found in tht databse" % str(taxi[0]))
+    last_cursor = mycol.find({"taxi_id": int(taxi[0])},{"_id":0,"timestamp":1,"geo_point.lat":1,\
+            "geo_point.lon":1,"distance":1,"halt_time":1,"mph":1}).limit(1).sort([("_id",-1)])
     last=dict()
     for cursor in last_cursor:
         last = dict(cursor)
-    print(last)
-    origin = (last['geo_point']['latitude'],last['geo_point']['longitude'])
+    origin = (last['geo_point']['lat'],last['geo_point']['lon'])
     dest = (float(taxi[3]),float(taxi[2]))
     
     distance = last['distance']
@@ -41,13 +46,18 @@ def find_stat(taxi):
     if origin != dest:
         added_distance = calculate_distance(origin,dest)
         time_hr = time_difference/3600
-        speed = added_distance/time_hr
+        if time_difference ==0:
+            speed = last["mph"]
+        else:
+            speed = added_distance/time_hr
+        if speed >=150:
+            speed=last["mph"]
         distance+=added_distance
     else:
         speed = 0
         halt_time+=time_difference
 
-    
+    topic_logs.send("updating the following values %s , %s and %s", str(speed),str(distance),str(halt_time))
     return [speed,distance,halt_time]
 
 def convert_time_epoch(regular_date):
@@ -65,9 +75,13 @@ async def greet(mongo_topic):
     async for taxi in mongo_topic:
         global mycol
         taxi = taxi.decode('utf-8').split(",")
-        
+        await log_topic.send("Consumer - new entry %s", str(taxi))
 
         taxi[1]=convert_time_epoch(taxi[1])
         taxi.extend(find_stat(taxi))
         doc = convert_document(taxi)
+        await log_topic.send("Consumer - push entry %s" % str(doc))
+        doc_json = json.dumps(doc)
+        await elastic_topic.send(value=doc_json)
         mycol.insert(doc)
+        await log_topic.send("Consumer - Entry is sent")
