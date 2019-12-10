@@ -2,6 +2,7 @@ import faust
 from elasticsearch import Elasticsearch
 import json
 import io
+from pprint import pprint
 
 es = Elasticsearch()
 
@@ -17,15 +18,29 @@ async def publishToElastic(stream):
     #if not create_index(es, 'geolocations'):
     #    print("error occurred while creating index")
     
-    async for msg in stream:
-        await elasticSearchSink.send(value=json.loads(io.BytesIO(msg).read().decode('utf-8')))
+    async for msgs in stream.take(100,within=10):
+        for msg in msgs:
+            jsonData = json.loads(msg.decode('utf-8'))
+            jsonData['timestamp'] = jsonData['timestamp']*1000
+            #add to ES
+            insertInES(es, 'geolocations', jsonData)
+        #print([mg.decode('utf-8') for mg in msg])
 
+"""
 @app.agent()
 async def elasticSearchSink(messages):
    # batch writes to elastic search
    global es
    async for msg in messages.take(100,within=10):
       print(msg)
+"""
+
+def insertInES(es_object, index_name, record):
+    try:
+        outcome = es_object.index(index=index_name, body=record)
+    except Exception as ex:
+        print('Error in indexing data')
+        print(str(ex))
 
 def create_index(es_object, index_name='geolocations'):
     created = False
