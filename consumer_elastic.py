@@ -1,5 +1,6 @@
 import faust
 from elasticsearch import Elasticsearch
+from kafka import KafkaProducer
 import json
 import io
 from pprint import pprint
@@ -11,12 +12,21 @@ es = Elasticsearch()
 app = faust.App('consumer',broker='kafka://10.168.0.2:9092',value_serializer='raw')
 
 message_topic = app.topic('elastic')
+producer = None
+
+def sendLog(message,topic='alog'):
+    if producer is not None:
+        producer.send(topic,key = bytes('1', encoding='utf-8'),value=bytes(message,encoding='utf-8'))
+    else:
+        print("Producer not initialized")
+
 
 @app.agent(message_topic)
 async def publishToElastic(stream):
     global es
+
     if not create_index(es, 'geolocations'):
-        print("error occurred while creating index")
+        sendLog("error occurred while creating index")
     
     async for msgs in stream.take(100,within=10):
         for msg in msgs:
@@ -39,8 +49,7 @@ def insertInES(es_object, index_name, record):
     try:
         outcome = es_object.index(index=index_name, body=record)
     except Exception as ex:
-        print('Error in indexing data')
-        print(str(ex))
+        sendLog('Error {0} in indexing data'.format(ex))
 
 def create_index(es_object, index_name='geolocations'):
     created = False
@@ -76,14 +85,16 @@ def create_index(es_object, index_name='geolocations'):
     try:
         if not es_object.indices.exists(index_name):
             es_object.indices.create(index=index_name, body=settings)
-            print('Created Index')
+            sendLog('Created Index')
         created = True
     except Exception as ex:
-        print(str(ex))
+        sendLog("Error {0}".format(ex))
     finally:
         return created
 
 if __name__=="__main__":
+    producer = KafkaProducer(bootstrap_servers=['10.168.0.2:9092'], api_version=(0, 10))
+
     app.main()
 
 """
