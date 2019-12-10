@@ -15,8 +15,8 @@ message_topic = app.topic('elastic')
 @app.agent(message_topic)
 async def publishToElastic(stream):
     global es
-    #if not create_index(es, 'geolocations'):
-    #    print("error occurred while creating index")
+    if not create_index(es, 'geolocations'):
+        print("error occurred while creating index")
     
     async for msgs in stream.take(100,within=10):
         for msg in msgs:
@@ -58,7 +58,7 @@ def create_index(es_object, index_name='geolocations'):
                     "timestamp": {
                         "type": "date"
                     },
-                    "location": {
+                    "geo_point": {
                         "type": "geo_point"
                     },
                     "mph": {
@@ -87,9 +87,7 @@ if __name__=="__main__":
     app.main()
 
 """
-{"taxi_id": 1, "timestamp": 1201938068, 
-"geo_point": {"latitude": 39.91248, "longitude": 116.47186}, 
-"mph": 0, "distance": 3.1533672334955427, "halt_time": 180, "_id": "5def05732fd95084b1c8017d"}
+{'taxi_id': 1, 'timestamp': 1201938068000, 'geo_point': {'lat': 39.91248, 'lon': 116.47186}, 'mph': 0, 'distance': 3.1533672334955427, 'halt_time': 180}
 """
 
     
