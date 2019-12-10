@@ -7,7 +7,7 @@ es = Elasticsearch()
 
 """ Reads from Kafka, publishes to elasticsearch """
 
-app = faust.App('consumer',broker='kafka://localhost:9092',value_serializer='raw')
+app = faust.App('consumer',broker='kafka://datacenter:9092',value_serializer='raw')
 
 message_topic = app.topic('geoMsg')
 
