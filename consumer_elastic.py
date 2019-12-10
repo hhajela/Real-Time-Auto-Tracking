@@ -7,15 +7,15 @@ es = Elasticsearch()
 
 """ Reads from Kafka, publishes to elasticsearch """
 
-app = faust.App('consumer',broker='kafka://datacenter:9092',value_serializer='raw')
+app = faust.App('consumer',broker='kafka://10.168.0.2:9092',value_serializer='raw')
 
-message_topic = app.topic('geoMsg')
+message_topic = app.topic('elastic')
 
 @app.agent(message_topic)
 async def publishToElastic(stream):
     global es
-    if not create_index(es, 'geolocations'):
-        print("error occurred while creating index")
+    #if not create_index(es, 'geolocations'):
+    #    print("error occurred while creating index")
     
     async for msg in stream:
         await elasticSearchSink.send(value=json.loads(io.BytesIO(msg).read().decode('utf-8')))
@@ -24,7 +24,7 @@ async def publishToElastic(stream):
 async def elasticSearchSink(messages):
    # batch writes to elastic search
    global es
-   async for msg in messages.take(100):
+   async for msg in messages.take(100,within=10):
       print(msg)
 
 def create_index(es_object, index_name='geolocations'):
@@ -68,6 +68,8 @@ def create_index(es_object, index_name='geolocations'):
     finally:
         return created
 
+if __name__=="__main__":
+    app.main()
 
 """
 {"taxi_id": 1, "timestamp": 1201938068, 
